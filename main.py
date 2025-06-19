@@ -1,19 +1,14 @@
-import msvcrt
 import re
 import sqlite3
 import subprocess
 import time
 import datetime
 import json
-import uuid
 
 # Function to ping 8.8.8.8
 def ping_google():
     while True:
         timestamp = datetime.datetime.now().isoformat()
-        # Check if key pressed
-        if msvcrt.kbhit():
-            break
 
         # Ping 8.8.8.8 (Google DNS)
         try:
