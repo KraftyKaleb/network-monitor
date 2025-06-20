@@ -1,9 +1,13 @@
 import re
-import sqlite3
 import subprocess
 import time
 import datetime
 import json
+import csv
+
+def open_file():
+    # Create or check for CSV file
+    return open('network-errors.csv', 'a+', newline='')
 
 # Function to ping 8.8.8.8
 def ping_google():
@@ -27,79 +31,54 @@ def ping_google():
 
         # Wait 1 second before next ping
         time.sleep(1)
+
+
 # Function to record failed pings
 def record_failed_ping(timestamp):
-    try:
-        conn = sqlite3.connect('network-errors.db')
-        cursor = conn.cursor()
-        cursor.execute('INSERT INTO heartbeat (time) VALUES (?)', (timestamp,))
-        conn.commit()
-        conn.close()
-        print(f"Failed ping recorded at {timestamp}")
-    except sqlite3.Error as e:
-        print(f"Error recording to database: {e}")
+    with open_file() as file:
+        writer = csv.writer(file)
+        writer.writerow([timestamp])
+        print(f"[{timestamp}] Ping failed, event logged.")
 
 def group_consecutive_timestamps(timestamps):
     if not timestamps:
         return []
-    
+
     intervals = []
     current_interval = [timestamps[0][0]]  # Start with first timestamp
-    
+
     for i in range(1, len(timestamps)):
         current_time = datetime.datetime.fromisoformat(timestamps[i][0])
         previous_time = datetime.datetime.fromisoformat(timestamps[i-1][0])
-        
-        # Check if timestamps are consecutive (within 2 seconds to account for small delays)
+
+        # Check if timestamps are consecutive (within 5 seconds to account for variations)
         time_diff = (current_time - previous_time).total_seconds()
-        
-        if time_diff <= 2:  # Consecutive failed pings
+
+        if time_diff <= 5:  # Consecutive failed pings with more tolerance
             current_interval.append(timestamps[i][0])
         else:
-            # If the difference is more than 2 seconds, end current interval
-            if len(current_interval) > 1:  # Only add intervals with at least 2 timestamps
-                intervals.append({
-                    'start': current_interval[0],
-                    'end': current_interval[-1],
-                    'duration': (datetime.datetime.fromisoformat(current_interval[-1]) - 
-                               datetime.datetime.fromisoformat(current_interval[0])).total_seconds(),
-                    'failed_pings': len(current_interval)
-                })
+            # If the difference is more than 5 seconds, end current interval
+            # Include even single timestamps as their own interval
+            intervals.append({
+                'start': current_interval[0],
+                'end': current_interval[-1],
+                'duration': (datetime.datetime.fromisoformat(current_interval[-1]) -
+                           datetime.datetime.fromisoformat(current_interval[0])).total_seconds(),
+                'failed_pings': len(current_interval)
+            })
             current_interval = [timestamps[i][0]]  # Start new interval
-    
-    # Don't forget to add the last interval if it has multiple timestamps
-    if len(current_interval) > 1:
+
+    # Always add the last interval, even if it's a single timestamp
+    if current_interval:  # As long as there's at least one timestamp
         intervals.append({
             'start': current_interval[0],
             'end': current_interval[-1],
-            'duration': (datetime.datetime.fromisoformat(current_interval[-1]) - 
+            'duration': (datetime.datetime.fromisoformat(current_interval[-1]) -
                        datetime.datetime.fromisoformat(current_interval[0])).total_seconds(),
             'failed_pings': len(current_interval)
         })
-    
+
     return intervals
-
-
-# Connect to the database
-try:
-    conn = sqlite3.connect('network-errors.db')
-    cursor = conn.cursor()
-
-    # Execute the query
-    cursor.execute('SELECT time FROM heartbeat')
-except sqlite3.Error as e:
-    print(f"Error connecting to database: {e}")
-    print("Creating new database...")
-    conn = sqlite3.connect('network-errors.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-                   CREATE TABLE IF NOT EXISTS heartbeat
-                   (
-                       time
-                       TEXT
-                   )
-                   ''')
-    conn.commit()
 
 
 print('"Boldyn Notworks" – Because nothing actually works.')
@@ -113,8 +92,9 @@ if choice.lower() == 'j':
     interface = input("Enter your network interface: ")
 
     # Fetch all data
-    cursor.execute('SELECT time FROM heartbeat')
-    results = cursor.fetchall()
+    with open('network-errors.csv') as file:
+        csvreader = csv.reader(file)
+        results = list(csvreader)  # Read all data at once
 
     # After fetching results
     intervals = group_consecutive_timestamps(results)
@@ -130,9 +110,10 @@ else:
     print("Starting ping loop...")
     ping_google()
     print("Ping loop stopped.\n")
-    # Fetch all data
-    cursor.execute('SELECT time FROM heartbeat')
-    results = cursor.fetchall()
+    # Read timestamps from CSV
+    with open_file() as file:
+        csvreader = csv.DictReader(file)
+        results = [row['time'] for row in csvreader]
 
     # After fetching results
     intervals = group_consecutive_timestamps(results)
@@ -145,9 +126,3 @@ else:
             print(f"Failed pings: {interval['failed_pings']}")
     else:
         print("\nNo consecutive failed pings found.")
-
-# Close the connection
-try:
-    conn.close()
-except sqlite3.Error as e:
-    print(f"Error closing database connection: {e}")
