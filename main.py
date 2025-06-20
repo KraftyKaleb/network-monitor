@@ -32,7 +32,7 @@ def record_failed_ping(timestamp):
     try:
         conn = sqlite3.connect('network-errors.db')
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO heartbeat (time) VALUES (?)',timestamp)
+        cursor.execute('INSERT INTO heartbeat (time) VALUES (?)', (timestamp,))
         conn.commit()
         conn.close()
         print(f"Failed ping recorded at {timestamp}")
